@@ -208,7 +208,7 @@ int main() {
 
   //Some variables
   int lane(1); //of a total of 3 [0,1,2]
-  double ref_vel(49.5); //mphs
+  double ref_vel(0); //mphs
 
 
   h.onMessage([&ref_vel, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &lane](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
@@ -252,6 +252,66 @@ int main() {
           	int const prev_size(previous_path_x.size());
 
           	json msgJson;
+
+//_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+          	//some constants using in arons changes
+            int const laneSize(4); //4meters lanesize
+            int const halfALane(laneSize/2);
+            int const middleOfCurrentLane(laneSize * lane + laneSize/2);
+
+//_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+          	//Arons changes concerning sensor fusion
+
+            //if the is a previous path, we reset the car's position
+            //to the previous path last s position
+          	if(prev_size > 0)
+          	{
+          	  car_s = end_path_s;
+          	}
+
+          	bool too_close(false);
+
+          	//find ref_v to use
+          	for(int i(0), _maxI(sensor_fusion.size()); i<_maxI; ++i)
+          	{
+          	  //car is in my lane
+          	  //d represents the d-value of car i
+          	  float d(sensor_fusion[i][6]);
+          	  if(d < (middleOfCurrentLane+halfALane) && d > (middleOfCurrentLane-halfALane))
+          	  {
+          	    double vx(sensor_fusion[i][3]);
+          	    double vy(sensor_fusion[i][4]);
+          	    double check_speed(sqrt(vx*vx+vy*vy));
+          	    double check_car_s(sensor_fusion[i][5]);
+
+          	    //if using previous points can project s value out
+          	    //Please note: previous points are the points of our trajectory
+          	    //representing where the car might be in future!
+          	    //The 0.02 is the step-size in seconds (50 steps => 1 step = 0.02)
+          	    check_car_s+=((double)prev_size * 0.02 * check_speed);
+          	    //check s value greater than mine and s gap
+          	    if((check_car_s > car_s) && ((check_car_s-car_s) < 30))
+          	    {
+          	      //do some logic here, lower reference velocity so we don't
+          	      //crash into the car in front of us.
+          	      //could also flag to try to change lanes
+//          	      ref_vel = 29.5; //mph
+          	      too_close = true;
+          	    }
+          	  }
+          	}
+
+          	if(too_close)
+          	{
+          	  ref_vel -= .224;
+          	}
+          	else if(ref_vel < 49.5)
+          	{
+          	  ref_vel += .224;
+          	}
+
+//_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
 
 
 //_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
@@ -297,8 +357,7 @@ int main() {
           	}
 
           	//in frenet add evenly 30m spaced points ahead of the starting reference
-          	int const lanesize(4); //4meters lanesize
-          	int const middleOfCurrentLane(lanesize * lane + lanesize/2);
+
           	vector<double> next_wp0(getXY(car_s+1*30,middleOfCurrentLane, map_waypoints_s, map_waypoints_x, map_waypoints_y));
           	vector<double> next_wp1(getXY(car_s+2*30,middleOfCurrentLane, map_waypoints_s, map_waypoints_x, map_waypoints_y));
           	vector<double> next_wp2(getXY(car_s+3*30,middleOfCurrentLane, map_waypoints_s, map_waypoints_x, map_waypoints_y));
@@ -354,7 +413,10 @@ int main() {
             //points, here we will always output 50 points
             for(int i(1),_maxI(50-previous_path_x.size());i<=_maxI ; ++i)
             {
-              //transform mph into meter per second
+              //transform mph into meter per step
+              //mph into m/s is ref_vel/2.24
+              //But we're dealing with 50 steps per seconds - that means
+              //the projection step is 0.02
               double ref_vel_ms(.02*ref_vel/2.24);
               double N(target_dist/ref_vel_ms);
               double x_point(x_add_on+(target_x)/N);
