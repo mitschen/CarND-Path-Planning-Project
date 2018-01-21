@@ -9,7 +9,8 @@
 #include <limits>
 
 
-double const c_maxSpeed = 49.5; //mph
+double const c_maxSpeed = 50.; //mph
+double const c_maxAcceleration = 9.;
 int const c_noLanes = 3;
 int const c_laneSize = 4; //4 meter lanes
 int const c_halfALane(c_laneSize/2);
@@ -69,12 +70,21 @@ struct SVehicle
 
 struct SLane
 {
-  SLane() : lane(-1), predecessor(-100000.), successor(100000.), velocityExpected(0.), velocityDevelopment(c_noProjectionPoints, 0.){};
+  SLane() : lane(-1), predecessor(-100000.), successor(100000.), velocityExpected(0.), preferenceVal(1.), velocityDevelopment(c_noProjectionPoints, 0.){};
   int lane;
   SVehicle predecessor;
   SVehicle successor;
   double velocityExpected;
+  double preferenceVal;
   std::vector<double> velocityDevelopment;
+};
+
+struct SState
+{
+  int currentLane;
+  int intendedLane;
+  double currentSpeed;
+  bool changeLane;
 };
 
 
@@ -102,11 +112,15 @@ std::vector<double> getFrenet(double x, double y, double theta, const std::vecto
  */
 std::vector<double> getXY(double s, double d, const std::vector<double> &maps_s, const std::vector<double> &maps_x, const std::vector<double> &maps_y);
 
+int identifyLane(double const d);
+
 std::vector<SLane> prepareLanes(SCarPos const &car, std::vector< std::vector<double> > const &sensor);
 
-bool laneChangeAllowed(SCarPos const &car, SLane const&);
+bool laneChangeAllowed(SCarPos const &car, SLane const&, bool passing = false, bool dump=false);
 
-void speedvalueDevelopmentOnLane(SCarPos const &car, SLane &lane, double const speedDiff = 5.224 );
+double speedvalueDevelopmentOnLane(SCarPos const &car, SLane &lane, bool passing = false, double const speedDiff = c_maxAcceleration );
+
+double getSecurityBelt(double const &speed_mps, bool passing = false);
 
 /**
  * returns the next x,y waypoints for our car

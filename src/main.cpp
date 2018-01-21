@@ -246,7 +246,7 @@ std::vector<SLane> prepareLanes(SCarPos const &car, std::vector< std::vector<dou
     double predDeltaS(c_horizont_s / c_numberOfPredictions * (pred.velocity * c_mph2mps_factor) );
     SVehicle &succ(lanes[i].successor);
     double succDeltaS(c_horizont_s / c_numberOfPredictions * (succ.velocity * c_mph2mps_factor) );
-    cout <<0<< " Lane "<<i<<" Pred "<<pred.positionInTime[0]<<" Succ "<<succ.positionInTime[0]<<endl;
+//    cout <<0<< " Lane "<<i<<" Pred "<<pred.positionInTime[0]<<" Succ "<<succ.positionInTime[0]<<endl;
     //make sure that the positions are filled even in case, that there is
     //no predecessor/ successor
     predDeltaS = pred.velocity==0.?1.:predDeltaS;
@@ -265,31 +265,44 @@ std::vector<SLane> prepareLanes(SCarPos const &car, std::vector< std::vector<dou
   return lanes;
 }
 
-bool laneChangeAllowed(SCarPos const &car, SLane const& lane)
+bool laneChangeAllowed(SCarPos const &car, SLane const& lane, bool passing, bool dump)
 {
   bool retVal(true);
-  double const securityBelt(car.car_speed*c_mph2mps_factor*3.6 / 2.0); //according to german law: 1/2 of km/h in meters
-  cout<<"Lane "<<lane.lane<<" Belt "<<securityBelt<<" Pred "<<lane.predecessor.distanceToReference << " Succ "<<lane.successor.distanceToReference<<endl;
-  retVal = retVal && lane.predecessor.distanceToReference >= securityBelt;
+  double const securityBelt(getSecurityBelt(car.car_speed*c_mph2mps_factor, passing)); //according to german law: 1/2 of km/h in meters
+  if(dump)
+    cout<<"Lane "<<lane.lane<<" Belt "<<securityBelt<<" Pred "<<lane.predecessor.distanceToReference << " Succ "<<lane.successor.distanceToReference<<endl;
+  retVal = retVal && lane.predecessor.distanceToReference >= (securityBelt/4.);
   retVal = retVal && lane.successor.distanceToReference >= securityBelt;
+
+  //verify the future for at least one second
+  int stepsForOneSecond( (int)c_numberOfPredictions / c_horizont_s);
+  double carPos(car.car_s*c_mph2mps_factor);
+  double deltaS(car.car_speed / (double) stepsForOneSecond);
+  for(int i(0); retVal && (i<stepsForOneSecond); i++)
+  {
+    retVal = retVal && fabs(lane.predecessor.positionInTime[i]-carPos)>=(securityBelt/4.);
+    retVal = retVal && fabs(lane.successor.positionInTime[i]-carPos)>=(securityBelt);
+    carPos += deltaS;
+  }
   return retVal;
 }
 
-void speedvalueDevelopmentOnLane(SCarPos const &car, SLane &lane, double const speedDiff)
+double speedvalueDevelopmentOnLane(SCarPos const &car, SLane &lane,  bool passing, double const speedDiff)
 {
   std::vector<double> &resultingSpeed(lane.velocityDevelopment);
   double &avg_velocity(lane.velocityExpected);
+  double &preferenceVal(lane.preferenceVal);
 //  assert(laneChangeAllowed(car, lane));
 
   double currentCarPos(car.car_s);
   double currentCarSpeed(car.car_speed * c_mph2mps_factor);
   double const c_maxSpeedmps(c_maxSpeed * c_mph2mps_factor);
-  double speedDiffFraction(speedDiff *c_horizont_s / (double)c_numberOfPredictions);
-  double const securityBeltDelta(speedDiffFraction * 3.6 / 2.0);
+  double speedDiffFraction(0.5 * speedDiff * pow(c_horizont_s / (double)c_numberOfPredictions,2));
+  double const securityBeltDelta(getSecurityBelt(speedDiffFraction));
   double const timeDuringStep(c_horizont_s / (double) c_numberOfPredictions);
   for(int i(0); i < c_numberOfPredictions; ++i)
   {
-    double const securityBelt(currentCarSpeed*3.6 / 2.0); //according to german law: 1/2 of km/h in meters
+    double const securityBelt(getSecurityBelt(currentCarSpeed)); //according to german law: 1/2 of km/h in meters
     if( ( (currentCarPos + securityBelt + securityBeltDelta) < lane.successor.positionInTime[i])
       && ((currentCarSpeed + speedDiffFraction) < c_maxSpeedmps) )
     {
@@ -311,13 +324,27 @@ void speedvalueDevelopmentOnLane(SCarPos const &car, SLane &lane, double const s
     currentCarPos += timeDuringStep * currentCarSpeed;
     resultingSpeed[i] = currentCarSpeed;
     //turn back to mph
-    avg_velocity+=currentCarSpeed;
+//    avg_velocity+=currentCarSpeed;
+    preferenceVal+=currentCarSpeed;
     //reduce the impact of speed for distance
     speedDiffFraction *= .9;
+    if(i == (int) (c_numberOfPredictions / c_horizont_s))
+    {
+      avg_velocity = currentCarSpeed;
+    }
   }
-  cout<<"Avg_velocity "<<avg_velocity<<endl;
+//  cout<<"Avg_velocity "<<avg_velocity<<endl;
   avg_velocity /= c_mph2mps_factor;
-  avg_velocity /= (double) c_numberOfPredictions;
+  return avg_velocity;
+//  avg_velocity /= (double) c_numberOfPredictions;
+}
+
+double getSecurityBelt(double const &speed_mps, bool passing)
+{
+  //if we want to pass a car, we reduce the security belt to 5 m
+  if(passing)
+    return 5;
+  return 15.;//speed_mps * 3.6 / 2.0;
 }
 
 /**
@@ -384,7 +411,13 @@ SWaypoints calcNextXY( SCarPos const &car, SPathData const &path, SMapWaypoint c
   double const &car_x(car.car_x);
   double const &car_y(car.car_y);
   double const &car_yaw(car.car_yaw);
-  double const &car_s(car.car_s);
+  //          //if the is a previous path, we reset the car's position
+  //          //to the previous path last s position
+  //          if(prev_size > 0)
+  //          {
+  //            car_data.car_s = path_data.end_path_s;
+  //          }
+  double const &car_s(path.prev_path_x.size()>0?path.end_path_s:car.car_s);
   vector<double> const &previous_path_x(path.prev_path_x);
   vector<double> const &previous_path_y(path.prev_path_y);
   vector<double> const &map_waypoints_s(map.map_waypoints_s);
@@ -573,11 +606,16 @@ int main() {
   }
 
   //Some variables
-  int current_lane(1); //of a total of 3 [0,1,2]
-  double ref_vel(0); //mphs
+  SState myCarState;
+  myCarState.currentLane = 1;
+  myCarState.intendedLane = 1;
+  myCarState.currentSpeed = 0.;
+  myCarState.changeLane = false;
+//  int current_lane(1); //of a total of 3 [0,1,2]
+//  double ref_vel(0); //mphs
 
 
-  h.onMessage([&ref_vel, &map_data, &current_lane](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&myCarState, &map_data](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -638,17 +676,18 @@ int main() {
 
 //_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
           //The previous path size
+          myCarState.currentLane = identifyLane(car_data.car_d);
           int const prev_size(path_data.prev_path_x.size());
-          int const middleOfCurrentLane(c_laneSize * current_lane + c_laneSize/2);
+          int const middleOfCurrentLane(c_laneSize * myCarState.currentLane + c_laneSize/2);
 //_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
           //Arons changes concerning sensor fusion
 
-          //if the is a previous path, we reset the car's position
-          //to the previous path last s position
-          if(prev_size > 0)
-          {
-            car_data.car_s = path_data.end_path_s;
-          }
+//          //if the is a previous path, we reset the car's position
+//          //to the previous path last s position
+//          if(prev_size > 0)
+//          {
+//            car_data.car_s = path_data.end_path_s;
+//          }
 #if 0
           bool too_close(false);
 
@@ -743,39 +782,75 @@ int main() {
           }
 #endif
 
-          for(int i(0), _maxI(sensor_fusion.size()); i<_maxI; ++i)
-          {
-            std::vector<double> line = (sensor_fusion[i]);
-            dumpSensorFusion(line);
-          }
+//          for(int i(0), _maxI(sensor_fusion.size()); i<_maxI; ++i)
+//          {
+//            std::vector<double> line = (sensor_fusion[i]);
+//            dumpSensorFusion(line);
+//          }
           auto lanes(prepareLanes(car_data, sensor_fusion));
-          int resultingLane(-1);
+          bool passing(myCarState.changeLane);
+          std::pair<bool, double> validLanes[c_noLanes];
+          std::pair<int, double> preferredLane {myCarState.currentLane, speedvalueDevelopmentOnLane(car_data, lanes[myCarState.currentLane], passing)};
+          int previousLane(myCarState.currentLane);
+          bool dump(myCarState.intendedLane != myCarState.currentLane);
           for(int i(c_noLanes-1); i>=0; --i)
           {
-            if(!laneChangeAllowed(car_data, lanes[i]) && lanes[i].lane != current_lane)
+            validLanes[i].first = (laneChangeAllowed(car_data, lanes[i], passing, dump) || (lanes[i].lane == myCarState.currentLane) );
+            validLanes[i].second = validLanes[i].first?speedvalueDevelopmentOnLane(car_data, lanes[i], passing):0.;
+            preferredLane = (preferredLane.second<validLanes[i].second) && (validLanes[i].first)?std::pair<int, double>{i, validLanes[i].second}:preferredLane;
+          }
+          if( (myCarState.intendedLane != myCarState.currentLane) && validLanes[myCarState.intendedLane].first)
+          {
+            //stay with the previous decision, adjust speed only
+            myCarState.currentSpeed = validLanes[myCarState.currentLane].second;
+          }
+          else
+          {
+            //trigger lane switch
+            int laneDiff(preferredLane.first - myCarState.currentLane);
+            if(abs(laneDiff) <= 1)
             {
-              //noop
-              cout<<"Lane "<<i<<" not allowed"<<endl;
+              //laneswitch
+              myCarState.intendedLane = preferredLane.first;
+              myCarState.currentSpeed = preferredLane.second;
+            }
+            else if ((laneDiff<0) && (validLanes[myCarState.currentLane-1].first))
+            {
+              //laneswitch down
+              myCarState.intendedLane = myCarState.currentLane-1;
+              myCarState.currentSpeed = validLanes[myCarState.currentLane-1].second;
+            }
+            else if ((laneDiff>0) && (validLanes[myCarState.currentLane+1].first))
+            {
+              myCarState.intendedLane = myCarState.currentLane+1;
+              myCarState.currentSpeed = validLanes[myCarState.currentLane+1].second;
             }
             else
             {
-              //do a projection of the speedvalue we're reaching on this lane
-              speedvalueDevelopmentOnLane(car_data, lanes[i]);
-              cout << "Lane "<<i<<" Speed: "<<lanes[i].velocityExpected<<endl;
-              if( (resultingLane == -1)
-                || (lanes[i].velocityExpected > lanes[resultingLane].velocityExpected) )
-              {
-                resultingLane = i;
-                ref_vel = lanes[resultingLane].velocityExpected;
-              }
+              //keep lane
+              myCarState.intendedLane = myCarState.currentLane;
+              myCarState.currentSpeed = validLanes[myCarState.currentLane].second;
             }
           }
 
 
 //_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
-          cout<<"CarPos " <<car_data.car_s << " CurrentLane "<<current_lane<<" ResultingLane "<<resultingLane<<endl;
-          SWaypoints nextWayPoints(calcNextXY(car_data, path_data, map_data, (ref_vel*c_mph2mps_factor), resultingLane));
-          current_lane = resultingLane;
+          static int counter = 0;
+          counter = (myCarState.currentLane == myCarState.intendedLane)?0:counter;
+          if(myCarState.currentLane != myCarState.intendedLane)
+          {
+            if(counter == 0)
+              cout<<"*******************>"<<endl<<endl;
+            counter++;
+            cout<<"LaneChange carpos "<<car_data.car_s << " CurrentLane "<<previousLane<<" ResultingLane "<<myCarState.intendedLane<<endl;
+            for(int i(c_noLanes-1); i>=0; --i)
+            {
+              cout << i <<" Lane "<<(validLanes[i].first?"valid ":"invalid ")<<validLanes[i].second<<endl;
+            }
+          }
+          myCarState.changeLane = (myCarState.intendedLane != preferredLane.first);
+//          cout<<"CarPos " <<car_data.car_s << " CurrentLane "<<previousLane<<" ResultingLane "<<myCarState.currentLane<<endl;
+          SWaypoints nextWayPoints(calcNextXY(car_data, path_data, map_data, (myCarState.currentSpeed*c_mph2mps_factor), myCarState.intendedLane));
 //_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
 //          	//Arons changes
 //          	//create a list of widely spaced (x,y) waypoints, evenly spaced at 30m
