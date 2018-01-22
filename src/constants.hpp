@@ -10,7 +10,7 @@
 
 
 double const c_maxSpeed = 50.; //mph
-double const c_maxAcceleration = .224;
+double const c_maxAcceleration = 10. / 50.;//.224;
 double const c_updateTime = 0.02; //20ms update cycles
 int const c_noLanes = 3;
 int const c_laneSize = 4; //4 meter lanes
@@ -20,8 +20,8 @@ int const c_noProjectionPoints = 50; //how many points should be projected
 int const c_projectiongTime = 1; //in which time in seconds
 double const c_timeSpanPerProjectionPoint = c_projectiongTime / (double) c_noProjectionPoints;
 
-int const c_numberOfPredictions = 4;
-double const c_horizont_s = 2.; //take 2 seconds of future into considerations
+int const c_numberOfPredictions = 9; //prev4
+double const c_horizont_s = 3.; //take 2 seconds of future into considerations
 
 
 struct SCarPos
@@ -83,6 +83,7 @@ struct SLane
 struct SState
 {
   int     currentLane;
+  int     intendedLane;
   double  currentSpeed;
 };
 
@@ -121,15 +122,12 @@ std::vector<double> getXY(double s, double d, const std::vector<double> &maps_s,
 
 int identifyLane(double const d);
 
-std::vector<SLane> prepareLanes(SCarPos const &car, std::vector< std::vector<double> > const &sensor);
 
 std::vector<SLane> prepareLanes(SForecastState const &car, std::vector< std::vector<double> > const &sensor);
 
-bool laneChangeAllowed(SCarPos const &car, SLane const&, bool passing = false, bool dump=false);
 
 bool laneChangeAllowed(double const &car_speed, SForecastState const &car, SLane const&, bool passing = false, bool dump=false);
 
-double speedvalueDevelopmentOnLane(SCarPos const &car, SLane &lane, bool passing = false, double const speedDiff = c_maxAcceleration );
 
 double speedvalueDevelopmentOnLane(double const &car_speed, SForecastState const &car, SLane &lane, bool passing = false, double const speedDiff = c_maxAcceleration );
 
