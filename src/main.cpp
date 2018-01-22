@@ -200,71 +200,6 @@ int identifyLane(double const d)
   return (resultingLane-1);
 }
 
-std::vector<SLane> prepareLanes(SCarPos const &car, std::vector< std::vector<double> > const &sensor)
-{
-  std::vector<SLane> lanes;
-  lanes.resize(c_noLanes);
-  lanes[0].lane=0;
-  lanes[1].lane=1;
-  lanes[2].lane=2;
-  //index in sensorfusion array
-  int const cid(0);
-  int const cx(1);
-  int const cy(2);
-  int const cvx(3);
-  int const cvy(4);
-  int const cs(5);
-  int const cd(6);
-
-  //identify for each lane the predecessor and the successor
-  for(int i(0), _maxI(sensor.size()); i<_maxI; i++)
-  {
-//    cout << "FUSION "<<sensor[i][cd] <<" "<< sensor[i][cs] <<endl;
-    SLane &affectedLane(lanes[identifyLane(sensor[i][cd])]);
-    double distance(sensor[i][cs]-car.car_s);
-    if( (distance < 0.) && (affectedLane.predecessor.distanceToReference>fabs(distance)))
-    {
-      affectedLane.predecessor.distanceToReference = fabs(distance);
-      affectedLane.predecessor.index = i;
-      affectedLane.predecessor.velocity = c_mph2mps_factor * sqrt(sensor[i][cvx]*sensor[i][cvx]+sensor[i][cvy]*sensor[i][cvy]);
-      affectedLane.predecessor.positionInTime[0] = sensor[i][cs];
-    }
-    else if( (distance> 0.) && (affectedLane.successor.distanceToReference>distance))
-    {
-      affectedLane.successor.distanceToReference = distance;
-      affectedLane.successor.index = i;
-      affectedLane.successor.velocity = c_mph2mps_factor * sqrt(sensor[i][cvx]*sensor[i][cvx]+sensor[i][cvy]*sensor[i][cvy]);
-      affectedLane.successor.positionInTime[0] = sensor[i][cs];
-    }
-  }
-
-  //now calculate the projection of each predecessor and successor on each lane
-  for(int i(0); i<c_noLanes; ++i)
-  {
-    SLane &curLane(lanes[i]);
-    SVehicle &pred(lanes[i].predecessor);
-    double predDeltaS(c_horizont_s / c_numberOfPredictions * (pred.velocity * c_mph2mps_factor) );
-    SVehicle &succ(lanes[i].successor);
-    double succDeltaS(c_horizont_s / c_numberOfPredictions * (succ.velocity * c_mph2mps_factor) );
-//    cout <<0<< " Lane "<<i<<" Pred "<<pred.positionInTime[0]<<" Succ "<<succ.positionInTime[0]<<endl;
-    //make sure that the positions are filled even in case, that there is
-    //no predecessor/ successor
-    predDeltaS = pred.velocity==0.?1.:predDeltaS;
-    succDeltaS = succ.velocity==0.?1.:succDeltaS;
-    for(int j(1); j<c_numberOfPredictions; ++j)
-    {
-      pred.positionInTime[j] = pred.positionInTime[j-1]+predDeltaS;
-      succ.positionInTime[j] = succ.positionInTime[j-1]+succDeltaS;
-//      cout <<j<< " Lane "<<i<<" Pred"<<pred.positionInTime[j]<<", "<<pred.velocity<<" Succ "<<succ.positionInTime[j]<<", "<<succ.velocity<<endl;
-    }
-  }
-//  static int test = 0;
-//  ++test;
-//
-//  assert(test!=5);
-  return lanes;
-}
-
 
 std::vector<SLane> prepareLanes(SForecastState const &car, std::vector< std::vector<double> > const &sensor)
 {
@@ -329,27 +264,6 @@ std::vector<SLane> prepareLanes(SForecastState const &car, std::vector< std::vec
   return lanes;
 }
 
-bool laneChangeAllowed(SCarPos const &car, SLane const& lane, bool passing, bool dump)
-{
-  bool retVal(true);
-  double const securityBelt(getSecurityBelt(car.car_speed*c_mph2mps_factor, passing)); //according to german law: 1/2 of km/h in meters
-  if(dump)
-    cout<<"Lane "<<lane.lane<<" Belt "<<securityBelt<<" Pred "<<lane.predecessor.distanceToReference << " Succ "<<lane.successor.distanceToReference<<endl;
-  retVal = retVal && lane.predecessor.distanceToReference >= (securityBelt/4.);
-  retVal = retVal && lane.successor.distanceToReference >= securityBelt;
-
-  //verify the future for at least one second
-  int stepsForOneSecond( (int)c_numberOfPredictions / c_horizont_s);
-  double carPos(car.car_s*c_mph2mps_factor);
-  double deltaS(car.car_speed / (double) stepsForOneSecond);
-  for(int i(0); retVal && (i<stepsForOneSecond); i++)
-  {
-    retVal = retVal && fabs(lane.predecessor.positionInTime[i]-carPos)>=(securityBelt/4.);
-    retVal = retVal && fabs(lane.successor.positionInTime[i]-carPos)>=(securityBelt);
-    carPos += deltaS;
-  }
-  return retVal;
-}
 
 bool laneChangeAllowed(double const &car_speed, SForecastState const &car, SLane const&lane, bool passing, bool dump)
 {
@@ -373,59 +287,6 @@ bool laneChangeAllowed(double const &car_speed, SForecastState const &car, SLane
   return retVal;
 }
 
-double speedvalueDevelopmentOnLane(SCarPos const &car, SLane &lane,  bool passing, double const speedDiff)
-{
-  std::vector<double> &resultingSpeed(lane.velocityDevelopment);
-  double &avg_velocity(lane.velocityExpected);
-  double &preferenceVal(lane.preferenceVal);
-  double const c_maxSpeedmps(c_maxSpeed * c_mph2mps_factor);
-
-  double currentCarPos(car.car_s);
-  double currentCarSpeed(car.car_speed * c_mph2mps_factor);
-  double accelaration(speedDiff * c_updateTime);
-  double accDistanceFraction(0.5 * accelaration * pow(c_horizont_s / (double)c_numberOfPredictions,2));
-  double speedDiffFraction(accelaration * (c_horizont_s / (double)c_numberOfPredictions));
-  double const securityBeltDelta(getSecurityBelt(speedDiffFraction));
-  double const timeDuringStep(c_horizont_s / (double) c_numberOfPredictions);
-  for(int i(0); i < c_numberOfPredictions; ++i)
-  {
-
-    double const securityBelt(getSecurityBelt(currentCarSpeed)); //according to german law: 1/2 of km/h in meters
-    if( ( (currentCarPos + securityBelt + securityBeltDelta) < lane.successor.positionInTime[i])
-      && ((currentCarSpeed + speedDiffFraction) < c_maxSpeedmps) )
-    {
-      //increase the speed
-      currentCarSpeed+=speedDiffFraction;
-      currentCarPos+=accDistanceFraction;
-    }
-    else if((currentCarPos + securityBelt) < lane.successor.positionInTime[i])
-    {
-      //keep the speed
-    }
-    else
-    {
-      //reduce the speed
-      currentCarSpeed-=speedDiffFraction;
-      currentCarPos-=accDistanceFraction;
-    }
-    currentCarPos += timeDuringStep * currentCarSpeed;
-    resultingSpeed[i] = currentCarSpeed;
-    //turn back to mph
-//    avg_velocity+=currentCarSpeed;
-    preferenceVal+=currentCarSpeed;
-    //reduce the impact of speed for distance
-//    speedDiffFraction *= .9;
-    if(i == (int) (c_numberOfPredictions / c_horizont_s))
-    {
-      avg_velocity = currentCarSpeed;
-    }
-  }
-  avg_velocity /= c_mph2mps_factor;
-  cout<<"Avg_velocity "<<avg_velocity<<" CarSpeed " <<car.car_speed<<endl;
-  return avg_velocity;
-//  avg_velocity /= (double) c_numberOfPredictions;
-}
-
 double speedvalueDevelopmentOnLane(double const &car_speed, SForecastState const &car, SLane &lane,  bool passing, double const speedDiff)
 {
 
@@ -446,7 +307,7 @@ double speedvalueDevelopmentOnLane(double const &car_speed, SForecastState const
   for(int i(0); i < c_numberOfPredictions; ++i)
   {
 
-    double const securityBelt(getSecurityBelt(currentCarSpeed)); //according to german law: 1/2 of km/h in meters
+    double const securityBelt(getSecurityBelt(currentCarSpeed*c_mph2mps_factor)); //according to german law: 1/2 of km/h in meters
     if( ( (currentCarPos + securityBelt + diff_s) < lane.successor.positionInTime[i])
       && ((currentCarSpeed + speedDiff) < c_maxSpeedmps) )
     {
@@ -472,6 +333,7 @@ double speedvalueDevelopmentOnLane(double const &car_speed, SForecastState const
       avg_velocity = currentCarSpeed;
     }
   }
+//  avg_velocity = currentCarSpeed +  (currentCarSpeed - car_speed)/ (double) c_numberOfPredictions;
   cout<<"Avg_velocity "<<avg_velocity<<" CarSpeed " <<car_speed<<endl;
   return avg_velocity;
 }
@@ -481,7 +343,7 @@ double getSecurityBelt(double const &speed_mps, bool passing)
   //if we want to pass a car, we reduce the security belt to 5 m
   if(passing)
     return 5;
-  return 15.;//speed_mps * 3.6 / 2.0;
+  return speed_mps * 3.6 / 2.0;
 }
 
 /**
@@ -641,9 +503,6 @@ SWaypoints calcNextXY( SCarPos const &car, SPathData const &path, SMapWaypoint c
 
   //set (x,y) points to the spline
   s.set_points(ptsx, ptsy);
-
-
-
 
   //start with all the previous path points from last time
   for(int i(0), _maxI(previous_path_x.size()); i < _maxI; ++i)
@@ -937,7 +796,7 @@ int main() {
 //            std::vector<double> line = (sensor_fusion[i]);
 //            dumpSensorFusion(line);
 //          }
-          auto lanes(prepareLanes(car_data, sensor_fusion));
+          auto lanes(prepareLanes(forecast, sensor_fusion));
           bool passing(false);
           std::pair<bool, double> validLanes[c_noLanes];
           std::pair<int, double> preferredLane {myCarState.currentLane, speedvalueDevelopmentOnLane(myCarState.currentSpeed, forecast, lanes[myCarState.currentLane], passing)};
@@ -945,7 +804,7 @@ int main() {
           bool dump(false);
           for(int i(c_noLanes-1); i>=0; --i)
           {
-            validLanes[i].first = (laneChangeAllowed(car_data, lanes[i], passing, dump) || (lanes[i].lane == myCarState.currentLane) );
+            validLanes[i].first = (laneChangeAllowed(myCarState.currentSpeed, forecast, lanes[i], passing, dump) || (lanes[i].lane == myCarState.currentLane) );
             validLanes[i].second = validLanes[i].first?speedvalueDevelopmentOnLane(myCarState.currentSpeed, forecast, lanes[i], passing):0.;
             preferredLane = (preferredLane.second<validLanes[i].second) && (validLanes[i].first)?std::pair<int, double>{i, validLanes[i].second}:preferredLane;
           }
