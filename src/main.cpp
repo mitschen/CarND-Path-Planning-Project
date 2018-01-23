@@ -19,11 +19,6 @@ using namespace std;
 using json = nlohmann::json;
 
 
-//SLane::SLane()
-//: lane(0), coverage()
-//{
-//  memset(coverage, 1., sizeof(double)*c_noProjectionPoints);
-//}
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
@@ -290,8 +285,6 @@ bool laneChangeAllowed(double const &car_speed, SForecastState const &car, SLane
 double speedvalueDevelopmentOnLane(double const &car_speed, SForecastState const &car, SLane &lane,  bool passing, double const speedDiff)
 {
 
-  //TODO
-  std::vector<double> &resultingSpeed(lane.velocityDevelopment);
   double &avg_velocity(lane.velocityExpected);
   double &preferenceVal(lane.preferenceVal);
   preferenceVal = 0.;
@@ -608,6 +601,7 @@ int main() {
   myCarState.currentLane = 1;
   myCarState.intendedLane = 1;
   myCarState.currentSpeed = 0.;
+  myCarState.laneChangeBuffer = 0;
 //  int current_lane(1); //of a total of 3 [0,1,2]
 //  double ref_vel(0); //mphs
 
@@ -687,118 +681,7 @@ int main() {
             forecast.car_s = car_data.car_s;
             forecast.car_d = car_data.car_d;
           }
-//          int const prev_size(path_data.prev_path_x.size());
-//          int const middleOfCurrentLane(c_laneSize * myCarState.currentLane + c_laneSize/2);
-//          myCarState.currentSpeed = car_data.car_speed;
-//          car_data.car_speed = myCarState.currentSpeed;
-//_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
-          //Arons changes concerning sensor fusion
 
-//          //if the is a previous path, we reset the car's position
-//          //to the previous path last s position
-//          if(prev_size > 0)
-//          {
-//            car_data.car_s = path_data.end_path_s;
-//          }
-#if 0
-          bool too_close(false);
-
-
-
-          //find ref_v to use
-          cout << "SensorFusion range "<<sensor_fusion.size()<<endl;
-          double maxSize(0.);
-          double minSize(numeric_limits<double>::max());
-          for(int i(0), _maxI(sensor_fusion.size()); i<_maxI; ++i)
-          {
-            std::vector<double> line = (sensor_fusion[i]);
-            dumpSensorFusion(line);
-            if(maxSize<sensor_fusion[i][5])
-            {
-              maxSize = sensor_fusion[i][5];
-            }
-            if(minSize>sensor_fusion[i][5])
-            {
-              minSize = sensor_fusion[i][5];
-            }
-            //car is in my lane
-            //d represents the d-value of car i
-            float d(sensor_fusion[i][6]);
-            if(d < (middleOfCurrentLane+c_halfALane) && d > (middleOfCurrentLane-c_halfALane))
-            {
-              double vx(sensor_fusion[i][3]);
-              double vy(sensor_fusion[i][4]);
-              double check_speed(sqrt(vx*vx+vy*vy));
-              double check_car_s(sensor_fusion[i][5]);
-
-              //if using previous points can project s value out
-              //Please note: previous points are the points of our trajectory
-              //representing where the car might be in future!
-              //The 0.02 is the step-size in seconds (50 steps => 1 step = 0.02)
-              check_car_s+=((double)prev_size * c_timeSpanPerProjectionPoint * check_speed);
-              //check s value greater than mine and s gap
-              if((check_car_s > car_data.car_s) && ((check_car_s-car_data.car_s) < 30))
-              {
-                //do some logic here, lower reference velocity so we don't
-                //crash into the car in front of us.
-                //could also flag to try to change lanes
-//          	      ref_vel = 29.5; //mph
-                too_close = true;
-//_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
-                //trigger the lane change
-                //we want to change the lane - our projection (next waypoints)
-                //we're calculating with the spline (see next_wp0, 1, 2)
-                //make sure that we are doing a smooth shift
-//                if(lane>0)
-//                {
-//                  lane--;
-//                }
-//                else if(lane == 2 )
-//                {
-//                  lane--;
-//                }
-//                else
-//                {
-//                  lane++;
-//                }
-                //TODO:
-                //Here the statemachine must kicks in
-                //Check the sensor-fusion - if we find a safe gap to
-                //either change to the left or to the right or if we
-                //simply have to keep the current lane
-
-                //TODO:
-                //Costfunction which could identify the best lane in future
-
-/*
-*                Q&A which came in
-*
-*/
-
-
-
-//_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
-              }
-            }
-          }
-
-          cout << "Sensor Fusion maxSize " << maxSize << " minSize "<<minSize<< " carPos "<<car_data.car_s<<"/"<<j[1]["s"]<<" carlane "<<current_lane<< "carspeed" << car_data.car_speed <<endl;
-
-          if(too_close)
-          {
-            ref_vel -= .224;
-          }
-          else if(ref_vel < 49.5)
-          {
-            ref_vel += .224;
-          }
-#endif
-
-//          for(int i(0), _maxI(sensor_fusion.size()); i<_maxI; ++i)
-//          {
-//            std::vector<double> line = (sensor_fusion[i]);
-//            dumpSensorFusion(line);
-//          }
           auto lanes(prepareLanes(forecast, sensor_fusion));
           bool passing(myCarState.currentLane != myCarState.intendedLane);
           std::pair<bool, double> validLanes[c_noLanes];
@@ -811,7 +694,7 @@ int main() {
             validLanes[i].second = validLanes[i].first?speedvalueDevelopmentOnLane(myCarState.currentSpeed, forecast, lanes[i], passing):0.;
             preferredLane = (preferredLane.second<validLanes[i].second) && (validLanes[i].first)?std::pair<int, double>{i, validLanes[i].second}:preferredLane;
           }
-          if( (preferredLane.first == myCarState.currentLane) && validLanes[myCarState.currentLane].first)
+          if( (0<--myCarState.laneChangeBuffer) || ((preferredLane.first == myCarState.currentLane) && validLanes[myCarState.currentLane].first) )
           {
             //stay with the previous decision, adjust speed only
             myCarState.currentSpeed = lanes[myCarState.currentLane].velocityExpected;
@@ -833,6 +716,7 @@ int main() {
               myCarState.currentLane = myCarState.currentLane-1;
               myCarState.intendedLane = preferredLane.first;
               myCarState.currentSpeed = lanes[myCarState.currentLane-1].velocityExpected;
+              myCarState.laneChangeBuffer = 10;
               //for tough lane changes, make sure to not violate acceleration
               myCarState.currentSpeed -= myCarState.currentSpeed>49.9?0.1:0.;
             }
@@ -842,6 +726,7 @@ int main() {
               myCarState.intendedLane = preferredLane.first;
               myCarState.currentSpeed = lanes[myCarState.currentLane+1].velocityExpected;
               myCarState.currentSpeed -= myCarState.currentSpeed>49.9?0.1:0.;
+              myCarState.laneChangeBuffer = 10;
             }
             else
             {
@@ -852,172 +737,18 @@ int main() {
           }
 
 
-//_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
-//          static int counter = 0;
-//          counter = (myCarState.currentLane == previousLane)?0:counter;
-//          if(myCarState.currentLane != previousLane)
-//          {
-//            if(counter == 0)
-//              cout<<"*******************>"<<endl<<endl;
-//            counter++;
-//            cout<<"LaneChange carpos "<<car_data.car_s << " CurrentLane "<<previousLane<<" ResultingLane "<<myCarState.currentLane<<" Intended "<<myCarState.intendedLane<<endl;
-            char lanename[c_noLanes] = {'l', 'm', 'r'};
-            for(int i(c_noLanes-1); i>=0; --i)
-            {
-              cout << (i==myCarState.currentLane?"*":i==myCarState.intendedLane?">":" ")<< lanename[i] <<" Lane "<<(validLanes[i].first?" valid  ":"invalid ")<<"Preference "<<setw(7)<<validLanes[i].second<<" ExpectedSpeed "<<lanes[i].velocityExpected<<endl;
-            }
-//          }
-//          myCarState.changeLane = (myCarState.intendedLane != preferredLane.first);
-//          cout<<"CarPos " <<car_data.car_s << " CurrentLane "<<previousLane<<" ResultingLane "<<myCarState.currentLane<<endl;
+          //Some informations written to console
+          static const char lanename[c_noLanes] = {'l', 'm', 'r'};
+          for(int i(c_noLanes-1); i>=0; --i)
+          {
+            cout << (i==myCarState.currentLane?"*":i==myCarState.intendedLane?">":" ")<< lanename[i] <<" Lane "<<(validLanes[i].first?" valid  ":"invalid ")<<"Preference "<<setw(7)<<validLanes[i].second<<" ExpectedSpeed "<<lanes[i].velocityExpected<<endl;
+          }
+          cout << "CarSpeed "<<setw(8)<<car_data.car_speed << " Current "<<setw(8)<< myCarState.currentSpeed<<endl;
+
+          //calculate the projected position in 1 seconds future (according to the Q&A of AAron and DSilver
           SWaypoints nextWayPoints(calcNextXY(car_data, path_data, map_data, (myCarState.currentSpeed*c_mph2mps_factor), myCarState.currentLane));
-          cout << "CarSpeed "<<setw(6)<<car_data.car_speed << " Current "<<setw(6)<< myCarState.currentSpeed<<endl;
-//_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
-//          	//Arons changes
-//          	//create a list of widely spaced (x,y) waypoints, evenly spaced at 30m
-//          	//later we will interpolate these waypoints with a spline and fill it
-//          	//in with more points that control speed
-//          	vector<double> ptsx, ptsy;
-//
-//          	//reference x,y, yaw states
-//          	//either we will reference the starting point as where the car is or
-//          	//at the previous paths end point
-//          	double ref_x(car_x);
-//          	double ref_y(car_y);
-//          	double ref_yaw(deg2rad(car_yaw));
-//
-//            //if previous size is almost empty, use the car as starting reference
-//          	if(prev_size < 2)
-//            {
-//          	  //use the two points that make the path tangent to the car
-//          	  double prev_car_x(car_x-cos(car_yaw));
-//          	  double prev_car_y(car_y-sin(car_yaw));
-//
-//          	  ptsx.push_back(prev_car_x);
-//          	  ptsx.push_back(car_x);
-//          	  ptsy.push_back(prev_car_y);
-//          	  ptsy.push_back(car_y);
-//            }
-//          	//use the previous path's end point as starting reference
-//          	else
-//          	{
-//          	  //redefine reference state as previous path end point
-//          	  ref_x = previous_path_x.back();
-//          	  ref_y = previous_path_y.back();
-//          	  double ref_x_prev(previous_path_x[previous_path_x.size()-2]);
-//          	  double ref_y_prev(previous_path_y[previous_path_y.size()-2]);
-//          	  ref_yaw = atan2(ref_y-ref_y_prev, ref_x-ref_x_prev);
-//          	  //use the two points that make the path tangent to the car
-//          	  ptsx.push_back(ref_x_prev);
-//              ptsx.push_back(ref_x);
-//              ptsy.push_back(ref_y_prev);
-//              ptsy.push_back(ref_y);
-//          	}
-//
-//          	//in frenet add evenly 30m spaced points ahead of the starting reference
-//
-//          	vector<double> next_wp0(getXY(car_s+1*30,middleOfCurrentLane, map_waypoints_s, map_waypoints_x, map_waypoints_y));
-//          	vector<double> next_wp1(getXY(car_s+2*30,middleOfCurrentLane, map_waypoints_s, map_waypoints_x, map_waypoints_y));
-//          	vector<double> next_wp2(getXY(car_s+3*30,middleOfCurrentLane, map_waypoints_s, map_waypoints_x, map_waypoints_y));
-//
-//          	//containing two previous points and the projection for 30,60,90 meter
-//          	ptsx.push_back(next_wp0.front());
-//          	ptsy.push_back(next_wp0.back());
-//          	ptsx.push_back(next_wp1.front());
-//            ptsy.push_back(next_wp1.back());
-//            ptsx.push_back(next_wp2.front());
-//            ptsy.push_back(next_wp2.back());
-//
-//            //we are moving/ shifting the coordinates in the way, that the first coordinate
-//            //referes to our origin of the next coordinate system
-//            for(int i(0), _maxI(ptsx.size()); i < _maxI; i++)
-//            {
-//              double shift_x(ptsx[i]-ref_x);
-//              double shift_y(ptsy[i]-ref_y);
-//
-//              ptsx[i] = (shift_x * cos(0-ref_yaw) - shift_y*sin(0-ref_yaw));
-//              ptsy[i] = (shift_x * sin(0-ref_yaw) + shift_y*cos(0-ref_yaw));
-//            }
-//
-//            //create a spline
-//            tk::spline s;
-//
-//            //set (x,y) points to the spline
-//            s.set_points(ptsx, ptsy);
-//
-//            //define the actual (x,y) points we will use for the planner
-//            vector<double> next_x_vals;
-//            vector<double> next_y_vals;
-//
-//
-//            //start with all the previous path points from last time
-//            for(int i(0), _maxI(previous_path_x.size()); i < _maxI; ++i)
-//            {
-//              next_x_vals.push_back(previous_path_x[i]);
-//              next_y_vals.push_back(previous_path_y[i]);
-//            }
-//
-//            //Calculate how to break up the spline points so that we travel at
-//            //our desired reference velocity
-//            double target_x(30.); //30 meters along x
-//            //use the spline s to identify the y coordinate on spline for target_x value
-//            double target_y(s(target_x));
-//            //target distance
-//            double target_dist(sqrt((target_x)*(target_x)+(target_y)*(target_y)));
-//
-//            double x_add_on(0.); //we're starting at the origin - so no x-addon
-//
-//            //fill up the rest of our path planner after filling it with previous
-//            //points, here we will always output 50 points
-//            for(int i(1),_maxI(50-previous_path_x.size());i<=_maxI ; ++i)
-//            {
-//              //transform mph into meter per step
-//              //mph into m/s is ref_vel/2.24
-//              //But we're dealing with 50 steps per seconds - that means
-//              //the projection step is 0.02
-//              double ref_vel_ms(.02*ref_vel*c_mph2mps_factor);
-//              double N(target_dist/ref_vel_ms);
-//              double x_point(x_add_on+(target_x)/N);
-//              double y_point(s(x_point)); //use the spline again to fetch the y coord
-//
-//              //set x_add_on to the current x point for next iteration
-//              x_add_on = x_point;
-//
-//              double x_ref(x_point), y_ref(y_point);
-//              //rotate back to normal after rotating it earlier
-//              //so from local coordinates (car) to the global coordinates
-//              x_point=(x_ref*cos(ref_yaw)-y_ref*sin(ref_yaw));
-//              y_point=(x_ref*sin(ref_yaw)+y_ref*cos(ref_yaw));
-//
-//              x_point+=ref_x;
-//              y_point+=ref_y;
-//
-//              next_x_vals.push_back(x_point);
-//              next_y_vals.push_back(y_point);
-//
-//
-//            }
-
-            //STOPPED AT TIME 37:30
-//_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
 
 
-//          	vector<double> next_x_vals;
-//          	vector<double> next_y_vals;
-#if SILVERS_STUFF //Silvers stuff
-          	//MScharf: getting started (1)
-          	double dist_inc = 0.5; //distance increment in meters (~50mph)
-            for(int i = 0; i < 50; i++) //constant size of 50 points of a path planner
-            {
-              //follow the line
-              double next_s(car_s+(i+1)*dist_inc);
-              double next_d(1.5 * 4); //4 meters lanes, and we have a total of 3 lanes, starting from the center (1.5 lanes)
-              vector<double> xy = getXY(next_s, next_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-              next_x_vals.push_back(xy.front());
-              next_y_vals.push_back(xy.back());
-//              next_x_vals.push_back(car_x+(dist_inc*i)*cos(deg2rad(car_yaw)));
-//              next_y_vals.push_back(car_y+(dist_inc*i)*sin(deg2rad(car_yaw)));
-            }
-#endif //SILVERS_STUFF
           // TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
           msgJson["next_x"] = nextWayPoints.x;
           msgJson["next_y"] = nextWayPoints.y;
