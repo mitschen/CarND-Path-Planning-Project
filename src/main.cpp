@@ -145,7 +145,7 @@ vector<double> getFrenet(double x, double y, double theta, const vector<double> 
 }
 
 // Transform from Frenet s,d coordinates to Cartesian x,y
-//MScharf: Invers calculation from Fenet
+//MScharf: Invers calculation from Frenet
 vector<double> getXY(double s, double d, const vector<double> &maps_s, const vector<double> &maps_x, const vector<double> &maps_y)
 {
 	int prev_wp = -1;
@@ -265,37 +265,23 @@ bool laneChangeAllowed(double const &car_speed, SForecastState const &car, SLane
   bool retVal(true);
   double const securityBelt(getSecurityBelt(car_speed*c_mph2mps_factor, passing)); //according to german law: 1/2 of km/h in meters
   if(dump)
+  {
     cout<<"Lane "<<lane.lane<<" Belt "<<securityBelt<<" Pred "<<lane.predecessor.distanceToReference << " Succ "<<lane.successor.distanceToReference<<endl;
-  retVal = retVal && lane.predecessor.distanceToReference >= (securityBelt/4.);
+  }
+  retVal = retVal && lane.predecessor.distanceToReference >= securityBelt;
   retVal = retVal && lane.successor.distanceToReference >= securityBelt;
-
-//  //verify the future for at least one second
-//  int stepsForOneSecond( (int)c_numberOfPredictions / c_horizont_s);
-//  double carPos(car.car_s*c_mph2mps_factor);
-//  double deltaS(car.car_speed / (double) stepsForOneSecond);
-//  for(int i(0); retVal && (i<stepsForOneSecond); i++)
-//  {
-//    retVal = retVal && fabs(lane.predecessor.positionInTime[i]-carPos)>=(securityBelt/4.);
-//    retVal = retVal && fabs(lane.successor.positionInTime[i]-carPos)>=(securityBelt);
-//    carPos += deltaS;
-//  }
   return retVal;
 }
 
 double speedvalueDevelopmentOnLane(double const &car_speed, SForecastState const &car, SLane &lane,  bool passing, double const speedDiff)
 {
-
-  double &avg_velocity(lane.velocityExpected);
+  double &allowed_velocity(lane.velocityExpected);
   double &preferenceVal(lane.preferenceVal);
   preferenceVal = 0.;
   double const c_maxSpeedmps(c_maxSpeed );
 
   double currentCarPos(car.car_s);
   double currentCarSpeed(car_speed);
-//  double accelaration(speedDiff * c_updateTime);
-//  double accDistanceFraction(0.5 * accelaration * pow(c_horizont_s / (double)c_numberOfPredictions,2));
-//  double speedDiffFraction(accelaration * (c_horizont_s / (double)c_numberOfPredictions));
-//  double const securityBeltDelta(getSecurityBelt(speedDiffFraction));
   double const timeDuringStep(c_horizont_s / (double) c_numberOfPredictions);
   double const diff_s(speedDiff * timeDuringStep);
   for(int i(0); i < c_numberOfPredictions; ++i)
@@ -307,7 +293,6 @@ double speedvalueDevelopmentOnLane(double const &car_speed, SForecastState const
     {
       //increase the speed
       currentCarSpeed+=speedDiff;
-//      currentCarPos+=diff_s;
     }
     else if((currentCarPos + securityBelt) < lane.successor.positionInTime[i])
     {
@@ -317,19 +302,19 @@ double speedvalueDevelopmentOnLane(double const &car_speed, SForecastState const
     {
       //reduce the speed
       currentCarSpeed-=speedDiff;
-//      currentCarPos-=diff_s;
     }
+    //adjust the carposition according to speedvalue
     currentCarPos+=(currentCarSpeed*timeDuringStep);
+    //adjust the preference value - simply adding the speed
     preferenceVal+=currentCarSpeed;
-    //reduce the impact of speed for distance
-//    speedDiffFraction *= .9;
+
+    //the current position (projected position) is taken as the
+    //allowed velocity. This is equal to the index 0
     if(i == 0)
     {
-      avg_velocity = currentCarSpeed;
+      allowed_velocity = currentCarSpeed;
     }
   }
-//  avg_velocity = currentCarSpeed +  (currentCarSpeed - car_speed)/ (double) c_numberOfPredictions;
-//  cout<<"Avg_velocity "<<avg_velocity<<" CarSpeed " <<car_speed<<endl;
   return preferenceVal;
 }
 
@@ -338,62 +323,12 @@ double getSecurityBelt(double const &speed_mps, bool passing)
   //if we want to pass a car, we reduce the security belt to 5 m
   if(passing)
     return 7;
+  //the distance we want to keep to other cars in case
+  //that we do not want to pass any car
+  //Instead of using speedometer in km/h divided by 2, we're reducing
+  //the distance by using nominator of 3
   return speed_mps * 3.6 / 3.0;
 }
-
-/**
- * get the cost function for lateral changes with respect to longitudinal
- * distance d<->s. This implicit will represent jerk. If we're doing
- * big lateral changes in a very short longitudinal scretch, this will
- * result in high jerk
- * @see BahviourPlanning chapter 12
- */
-double costFunction_Jerk(vector<double> const &_s, vector<double> const &_d)
-{
-  double const &goalD(_d.back());
-  double const &goalS(_s.back());
-  double costVal(0.);
-  for(int i(0), _maxI(_s.size()-1); i<_maxI; ++i)
-  {
-    double const &d(_d[i]), &s(_s[i]);
-    double const deltaD( fabs(goalD - d));
-    costVal+= (1 - exp(-(deltaD/(goalS-s) )));
-  }
-  return costVal / (double) (_s.size()-1);
-}
-
-
-/**
- * get the cost of a velocity trajectory normalized between 0-1
- * @see BahviourPlanning chapter 11
- */
-double costFunction_Velocity(vector<double> const &velocity)
-{
-  static double STOP_COST(0.8);
-  static double SPEED_LIMIT(50.);
-  static double BUFFER_V(0.5);
-  static double TARGET_SPEED(SPEED_LIMIT-BUFFER_V);
-  double costValue(0.);
-  for(int i(0), _maxI(velocity.size()); i<_maxI; ++i)
-  {
-    double const &cur_vel(velocity[i]);
-    if(cur_vel>SPEED_LIMIT)
-    {
-      costValue+=1.;
-    }
-    else if(cur_vel<=TARGET_SPEED)
-    {
-      costValue += STOP_COST*( (TARGET_SPEED-cur_vel) / TARGET_SPEED);
-    }
-    else
-    {
-      costValue+=(cur_vel-TARGET_SPEED) / BUFFER_V;
-    }
-
-  }
-  return costValue / (double)(velocity.size());
-}
-
 
 SWaypoints calcNextXY( SCarPos const &car, SPathData const &path, SMapWaypoint const &map, double const &velocity_mps, int const &currentLane)
 {
@@ -405,12 +340,8 @@ SWaypoints calcNextXY( SCarPos const &car, SPathData const &path, SMapWaypoint c
   double const &car_x(car.car_x);
   double const &car_y(car.car_y);
   double const &car_yaw(car.car_yaw);
-  //          //if the is a previous path, we reset the car's position
-  //          //to the previous path last s position
-  //          if(prev_size > 0)
-  //          {
-  //            car_data.car_s = path_data.end_path_s;
-  //          }
+  //if the is a previous path, we reset the car's position
+  //to the previous path last s position
   double const &car_s(path.prev_path_x.size()>0?path.end_path_s:car.car_s);
   vector<double> const &previous_path_x(path.prev_path_x);
   vector<double> const &previous_path_y(path.prev_path_y);
@@ -602,8 +533,6 @@ int main() {
   myCarState.intendedLane = 1;
   myCarState.currentSpeed = 0.;
   myCarState.laneChangeBuffer = 0;
-//  int current_lane(1); //of a total of 3 [0,1,2]
-//  double ref_vel(0); //mphs
 
 
   h.onMessage([&myCarState, &map_data](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
@@ -666,9 +595,10 @@ int main() {
           json msgJson;
 
 //_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
-          //The previous path size
-//          myCarState.currentLane = identifyLane(car_data.car_d);
+///_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_
+//_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
           SForecastState forecast;
+          //The previous path size
           forecast.offset = path_data.prev_path_x.size();
           forecast.middleOfLane = (c_laneSize * myCarState.currentLane + c_laneSize / 2);
           if(forecast.offset>0)
@@ -709,6 +639,7 @@ int main() {
               myCarState.currentLane = preferredLane.first;
               myCarState.intendedLane = myCarState.currentLane;
               myCarState.currentSpeed = lanes[preferredLane.first].velocityExpected;
+              myCarState.laneChangeBuffer = c_tangentialJerkBuffer;
             }
             else if ((laneDiff<0) && (validLanes[myCarState.currentLane-1].first))
             {
@@ -716,17 +647,14 @@ int main() {
               myCarState.currentLane = myCarState.currentLane-1;
               myCarState.intendedLane = preferredLane.first;
               myCarState.currentSpeed = lanes[myCarState.currentLane-1].velocityExpected;
-              myCarState.laneChangeBuffer = 10;
-              //for tough lane changes, make sure to not violate acceleration
-              myCarState.currentSpeed -= myCarState.currentSpeed>49.9?0.1:0.;
+              myCarState.laneChangeBuffer = c_tangentialJerkBuffer;
             }
             else if ((laneDiff>1) && (validLanes[myCarState.currentLane+1].first))
             {
               myCarState.currentLane = myCarState.currentLane+1;
               myCarState.intendedLane = preferredLane.first;
               myCarState.currentSpeed = lanes[myCarState.currentLane+1].velocityExpected;
-              myCarState.currentSpeed -= myCarState.currentSpeed>49.9?0.1:0.;
-              myCarState.laneChangeBuffer = 10;
+              myCarState.laneChangeBuffer = c_tangentialJerkBuffer;
             }
             else
             {
@@ -748,6 +676,10 @@ int main() {
           //calculate the projected position in 1 seconds future (according to the Q&A of AAron and DSilver
           SWaypoints nextWayPoints(calcNextXY(car_data, path_data, map_data, (myCarState.currentSpeed*c_mph2mps_factor), myCarState.currentLane));
 
+
+//_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+///_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_
+//_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
 
           // TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
           msgJson["next_x"] = nextWayPoints.x;

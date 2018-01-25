@@ -191,5 +191,7 @@ double getSecurityBelt(double const &speed_mps, bool passing = false);
  * returns the next, projected x,y waypoints for our car - the SWaypoints
  * contains the previous path information plus the projection of the car position
  * in future. The total number of waypoints is equal to c_noProjectionPoints
+ *
+ * With the current setup we're project our car 1 second to future
  */
 SWaypoints calcNextXY( SCarPos const &, SPathData const &, SMapWaypoint const &, double const &velocity_mps, int const &currentLane);
