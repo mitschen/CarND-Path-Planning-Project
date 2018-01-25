@@ -9,7 +9,7 @@
 #include <limits>
 
 
-double const c_maxSpeed = 50.;          //max speed in mph
+double const c_maxSpeed = 49.5;        //max speed in mph
 double const c_maxAcceleration = .224;  //max acceleration mph
 double const c_updateTime = 0.02;       //20ms delay between two update cycles
 int const c_noLanes = 3;                //total number of lanes
@@ -82,7 +82,7 @@ struct SWaypoints
  */
 struct SVehicle
 {
-  SVehicle(double const defaultPosInTime) : index(-1), velocity(0.), distanceToReference(std::numeric_limits<double>::max()), positionInTime{defaultPosInTime}
+  SVehicle() : index(-1), velocity(0.), distanceToReference(std::numeric_limits<double>::max()), positionInTime{std::numeric_limits<double>::max()}
   {};
   int index;                      //car index (of sensor fusion)
   double velocity;                //velocity of the car in mph
@@ -100,12 +100,14 @@ struct SVehicle
  */
 struct SLane
 {
-  SLane() : lane(-1), predecessor(-100000.), successor(100000.), velocityExpected(0.), preferenceVal(1.){};
+  SLane() : lane(-1), predecessor(), successor(), velocityExpected(0.), preferenceVal(1.), closestPredecessor(-1), closestSuccessor(-1){};
   int lane;                 //lane number(0..2)
-  SVehicle predecessor;     //the car in my back
-  SVehicle successor;       //the car in front of me
+  std::vector<SVehicle> predecessor;     //the car in my back
+  std::vector<SVehicle> successor;       //the car in front of me
   double velocityExpected;  //the velocity i'm assuming i can drive on that lane
   double preferenceVal;     //the preference value (how promising) of the lane (based on the velocity on the lane projected in time)
+  int closestPredecessor;   //closest vehicle in my back
+  int closestSuccessor;     //closest vehicle in my front
 };
 
 /**
@@ -171,7 +173,7 @@ std::vector<SLane> prepareLanes(SForecastState const &car, std::vector< std::vec
  * verify if by given car_speed and given projected position we are allowed to change
  * to a certain lane
  */
-bool laneChangeAllowed(double const &car_speed, SForecastState const &car, SLane const&, bool passing = false, bool dump=false);
+bool laneChangeAllowed(double const &car_speed, SForecastState const &car, SLane const&, bool passing = false);
 
 /**
  * calculate a projection of the car-speed/ position on a certain lane, consider
