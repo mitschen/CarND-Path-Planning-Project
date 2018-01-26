@@ -32,7 +32,7 @@ So which lane are we chosing: we take the lane which has the highest preference 
 With the velocity and the planned lane we're calculating our trajectory.
 
 ##Trajectory calculation
-The trajectory calculation is following the suggestion using splines described in the Q&A section of the project intro. Is is done during the `calcNextXY` method. In essence we're taking the path we've calculated so far in previous cycle and enrich the number of waypoints in the path to 50 in total. The additional points are calculated by using the projected car position and identify the car's position in 30,60, 90 meters following a certain lane (our chosen lane) with respect to the waypoints. This set of points is used to calculate a spline (by the spline.h library). We're identifying 50 points on that spline with a total distance of 30 meter. The previous trajectory path is filled with the just calculated points to a total number of 50 points.
+The trajectory calculation is following the suggestion using splines described in the Q&A section of the project intro. Is is done during the `calcNextXY` method. In essence we're taking the path we've calculated so far in previous cycle and enrich the number of waypoints in the path to 50 in total. The additional points are calculated by using the projected car position and identify the car's position in 30,60, 90 meters following a certain lane (our chosen lane) with respect to the waypoints. This set of points is used to calculate a spline (by the  [spline.h library](http://kluge.in-chemnitz.de/opensource/spline/)). We're identifying 50 points on that spline with a total distance of 30 meter. The previous trajectory path is filled with the just calculated points to a total number of 50 points.
 This spline trajectory calculation guarantees a smooth transition from one lane to the other.
 
 
@@ -46,5 +46,18 @@ The solution describes a simple path planner which allows a car to drive a long 
 The path planner is just a simple approach. It doesn't consider the possible behaviour of other vehicles on the highway - e.g. sudden lanechange or similar. Furthermore the acceleration model is very straight and simple - it doesn't allow any emergency handling (full stopp). 
 
 
+* * *
 
+##Review and rework
+The first submission failed the project criteria. The reviewer mentioned two findings:
+* max velocity of 50mph was exceeded
+* during the testrun it came to a crash with another vehicle.
+
+So is spended more time, revieweing my solution and find the weak spots. Concerning the max velocity - i didn't find any obvious misbehaviour in my sources. All velocity calculation was always based on the restriction, that the max-velocity (set to 50mph) must not be violated. I never faced the problem during my testruns. So the only countermeasurement I did therefore was, to reduce the max velocity to 49.5 mph. This give a little velocity buffer and should avoid any further max-speed violation.
+
+Concerning the crash with other vehicles: unfortunetely the situation isn't completely clear for me. From the screenshots given in the review, it looks like our vehicle runs into the red-forein vehicle without facing any certain situation. In the sources, the `laneChangeAllowed` function has exactly the function, to avoid such situation: this function always takes the projected car position into consideration and compares the position with the projected car positions of the closest vehicles. There are two possible clashes in my assumption:
+first of all i'm only considering the closest neighboors - nobody else. Which might lead to a situation in which i'm assuming, the lane is free - because I've almost passed the car, but there is another car directly next to the one.
+I've taken care of that by now reflecting all vehicles in my surroundings. That means instead of checking the distances to one predecessor and one successor, i'm comparing the carposition with each successor/ predecessor of the lane i would lake to move to. This affects all the functions `prepareLanes`, `laneChangeAllowed` and `speedvalueDevelopmentOnLane`.
+
+The second weak point is the distance to the car i'm planning to pass. Due to the fact that I'm reducing the security belt in case that I plan to pass a car to about 7 meter, I might run into the situation that I'm hitting the obstacle while moving from one lane to the other. So I've disabled this feature and keept the rule of thumbs: distance to other cars must be half of speedometer in meter.
 
