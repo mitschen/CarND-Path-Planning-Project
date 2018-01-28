@@ -677,7 +677,6 @@ int main() {
           if( (0<--myCarState.laneChangeBuffer) || ((preferredLane.first == myCarState.currentLane) && validLanes[myCarState.currentLane].first) )
           {
             //stay with the previous decision, adjust speed only
-            myCarState.currentSpeed = lanes[myCarState.currentLane].velocityExpected;
             myCarState.intendedLane = (0>=myCarState.laneChangeBuffer)?myCarState.currentLane:myCarState.intendedLane;
           }
           else
@@ -689,7 +688,6 @@ int main() {
               //laneswitch
               myCarState.currentLane = preferredLane.first;
               myCarState.intendedLane = myCarState.currentLane;
-              myCarState.currentSpeed = lanes[preferredLane.first].velocityExpected;
               myCarState.laneChangeBuffer = c_tangentialJerkBuffer;
             }
             else if ((laneDiff<0) && (validLanes[myCarState.currentLane-1].first))
@@ -697,23 +695,24 @@ int main() {
               //laneswitch down
               myCarState.currentLane = myCarState.currentLane-1;
               myCarState.intendedLane = preferredLane.first;
-              myCarState.currentSpeed = lanes[myCarState.currentLane-1].velocityExpected;
               myCarState.laneChangeBuffer = c_tangentialJerkBuffer;
             }
             else if ((laneDiff>1) && (validLanes[myCarState.currentLane+1].first))
             {
               myCarState.currentLane = myCarState.currentLane+1;
               myCarState.intendedLane = preferredLane.first;
-              myCarState.currentSpeed = lanes[myCarState.currentLane+1].velocityExpected;
               myCarState.laneChangeBuffer = c_tangentialJerkBuffer;
             }
             else
             {
               //keep lane
-              myCarState.currentSpeed = lanes[myCarState.currentLane].velocityExpected;
               myCarState.intendedLane = preferredLane.first;
             }
           }
+          //Always conider the speed of the old (current) lane instead of the
+          //target lane. This avoids crashes for the cases, another car moves
+          //into our lane.
+          myCarState.currentSpeed = lanes[myCarState.currentLane].velocityExpected;
 
 
           //Some informations written to console

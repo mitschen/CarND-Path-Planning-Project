@@ -189,6 +189,7 @@ double speedvalueDevelopmentOnLane(double const &car_speed, SForecastState const
  */
 double getSecurityBelt(double const &speed_mps, bool passing = false);
 
+
 /**
  * returns the next, projected x,y waypoints for our car - the SWaypoints
  * contains the previous path information plus the projection of the car position
